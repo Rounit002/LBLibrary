@@ -7,14 +7,13 @@ const path = require('path');
 const cors = require('cors');
 const pgSession = require('connect-pg-simple')(session);
 const fs = require('fs');
-const https = require('https'); // Added for HTTPS support
 const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
 const winston = require('winston');
 require('dotenv').config();
 
-const { setupCronJobs } = require('./utils/cronJobs');
-const { sendExpirationReminder } = require('./utils/email');
+const { setupCronJobs } = require('./utils/cronJobs'); 
+const { sendExpirationReminder } = require('./utils/email'); 
 
 const app = express();
 
@@ -31,22 +30,16 @@ if (process.env.NODE_ENV !== 'production') {
   logger.add(new winston.transports.Console({ format: winston.format.simple() }));
 }
 
-// Updated CORS configuration
 app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
-      'http://localhost:3000',
-      'https://localhost:3000',
-      'http://localhost:5173',
-      'https://lblibrary.onrender.com',
-      'capacitor://localhost',
-      'http://localhost',
+      'http://localhost:8080',
+      'https://archanalibrary.onrender.com',
       'file://'
     ];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      logger.warn(`CORS blocked origin: ${origin}`);
       callback(new Error('Not allowed by CORS'), false);
     }
   },
@@ -62,11 +55,9 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
 });
 
-// Improved database connection handling
 pool.connect((err, client, release) => {
   if (err) {
-    logger.error('Database connection failed:', err.stack);
-    process.exit(1); // Exit if DB connection fails
+    logger.error('Database connection error:', err.stack);
   } else {
     logger.info('Database connected successfully');
   }
@@ -116,8 +107,8 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
       stream.end(file.buffer);
     });
     if (!result || !result.secure_url) {
-      logger.error('Cloudinary upload failed, no secure_url:', result);
-      return res.status(500).json({ message: 'Image upload failed with Cloudinary' });
+        logger.error('Cloudinary upload failed, no secure_url:', result);
+        return res.status(500).json({ message: 'Image upload failed with Cloudinary' });
     }
     res.json({ imageUrl: result.secure_url });
   } catch (error) {
@@ -126,10 +117,10 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
   }
 });
 
-const authExports = require('./routes/auth');
+const authExports = require('./routes/auth'); 
 const authRouterFactory = authExports.authRouter;
-const authenticateUser = authExports.authenticateUser;
-const checkAdmin = authExports.checkAdmin;
+const authenticateUser = authExports.authenticateUser; 
+const checkAdmin = authExports.checkAdmin; 
 const checkAdminOrStaff = authExports.checkAdminOrStaff;
 
 if (typeof authenticateUser !== 'function') {
@@ -196,11 +187,6 @@ app.use('/api/reports', authenticateUser, checkAdminOrStaff, reportsRoutes);
 app.use('/api/branches', authenticateUser, checkAdmin, branchesRoutes);
 app.use('/api/products', authenticateUser, checkAdmin, productsRoutes);
 
-// Add a simple /login route for debugging
-app.get('/login', (req, res) => {
-  res.json({ message: 'Login route is accessible' });
-});
-
 app.get('/api/test-email', async (req, res) => {
   try {
     const settingsResult = await pool.query("SELECT value FROM settings WHERE key = 'brevo_template_id'");
@@ -241,35 +227,17 @@ app.use((err, req, res, next) => {
 
 const PORT_NUM = process.env.PORT || 3000;
 
-// Load HTTPS credentials (self-signed for local dev)
-let server;
-if (process.env.NODE_ENV !== 'production') {
-  try {
-    const privateKey = fs.readFileSync('key.pem', 'utf8');
-    const certificate = fs.readFileSync('cert.pem', 'utf8');
-    const credentials = { key: privateKey, cert: certificate };
-    server = https.createServer(credentials, app);
-    logger.info('HTTPS server credentials loaded successfully');
-  } catch (err) {
-    logger.warn('HTTPS credentials not found, falling back to HTTP:', err.message);
-    server = app; // Fallback to HTTP
-  }
-} else {
-  server = app; // In production, assume HTTPS is handled by a reverse proxy (e.g., Nginx)
-}
-
 (async () => {
   try {
     await initializeSessionTable();
     await createDefaultAdmin();
     if (typeof setupCronJobs === 'function') {
-      setupCronJobs(pool);
+        setupCronJobs(pool);
     } else {
-      logger.warn('setupCronJobs is not a function, cron jobs not started.');
+        logger.warn('setupCronJobs is not a function, cron jobs not started.');
     }
-    server.listen(PORT_NUM, '0.0.0.0', () => {
-      const protocol = server instanceof https.Server ? 'https' : 'http';
-      logger.info(`Server running on ${protocol}://0.0.0.0:${PORT_NUM}`);
+    app.listen(PORT_NUM, '0.0.0.0', () => {
+      logger.info(`Server running on port ${PORT_NUM}`);
     });
   } catch (err) {
     logger.error('Failed to start server:', err.stack);
@@ -286,7 +254,7 @@ async function initializeSessionTable() {
         "expire" timestamp(6) NOT NULL
       ) WITH (OIDS=FALSE);`);
     const pkeyCheck = await pool.query(`
-      SELECT conname FROM pg_constraint
+      SELECT conname FROM pg_constraint 
       WHERE conrelid = 'session'::regclass AND conrelid::oid IN (
         SELECT oid FROM pg_class WHERE relname = 'session' AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
       ) AND contype = 'p';
@@ -298,8 +266,8 @@ async function initializeSessionTable() {
     logger.info('Session table checked/initialized successfully');
   } catch (err) {
     logger.error('Error initializing session table:', err.stack);
-    if (err.code !== '42P07' && err.code !== '42710') {
-      throw err; // Rethrow to halt server startup
+    if (err.code !== '42P07' && err.code !== '42710') { 
+        // process.exit(1); // Consider if this should halt server startup
     } else {
       logger.warn(`Session table or its constraints/indexes might already exist: ${err.message}`);
     }
@@ -310,14 +278,14 @@ async function createDefaultAdmin() {
   try {
     const usersTableExists = await pool.query(`
       SELECT EXISTS (
-        SELECT FROM information_schema.tables
+        SELECT FROM information_schema.tables 
         WHERE  table_schema = 'public'
         AND    table_name   = 'users'
       );
     `);
     if (!usersTableExists.rows[0].exists) {
-      logger.warn('Users table does not exist yet. Default admin cannot be created. Please run migrations/schema setup.');
-      return;
+        logger.warn('Users table does not exist yet. Default admin cannot be created. Please run migrations/schema setup.');
+        return;
     }
 
     const userCountResult = await pool.query("SELECT COUNT(*) FROM users WHERE role = 'admin'");
@@ -333,12 +301,12 @@ async function createDefaultAdmin() {
     }
   } catch (err) {
     logger.error('Error creating default admin user:', err.stack);
-    if (err.code === '42P01') {
-      logger.warn('Users table does not exist yet (checked again). Default admin cannot be created.');
-    } else if (err.code !== '23505') {
-      throw err; // Rethrow to halt server startup
+     if (err.code === '42P01') {
+        logger.warn('Users table does not exist yet (checked again). Default admin cannot be created.');
+    } else if (err.code !== '23505') { // 23505 is unique_violation
+        // logger.error('Unhandled error during default admin creation:', err);
     } else {
-      logger.warn(`Admin user might already exist or other unique constraint violation during default admin creation: ${err.message}`);
+        logger.warn(`Admin user might already exist or other unique constraint violation during default admin creation: ${err.message}`);
     }
   }
 }
