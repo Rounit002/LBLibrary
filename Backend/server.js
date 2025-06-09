@@ -93,28 +93,19 @@ cloudinary.config({
 });
 
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
-app.post('/api/upload-image', upload.single('image'), async (req, res) => {
-  try {
-    const file = req.file;
-    if (!file) return res.status(400).json({ message: 'No file uploaded' });
-    const result = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream({ resource_type: 'image' }, (error, uploadResult) => {
-        if (error) return reject(error);
-        resolve(uploadResult);
-      });
-      stream.end(file.buffer);
-    });
-    if (!result || !result.secure_url) {
-        logger.error('Cloudinary upload failed, no secure_url:', result);
-        return res.status(500).json({ message: 'Image upload failed with Cloudinary' });
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 200 * 1024 }, // 200KB limit
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif/;
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = filetypes.test(file.mimetype);
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images (jpeg, jpg, png, gif) are allowed'));
     }
-    res.json({ imageUrl: result.secure_url });
-  } catch (error) {
-    logger.error('Error uploading image:', error);
-    res.status(500).json({ message: 'Server error during image upload' });
-  }
+  },
 });
 
 const authExports = require('./routes/auth'); 
@@ -141,6 +132,43 @@ if (typeof checkAdminOrStaff !== 'function') {
 }
 
 const authRoutes = authRouterFactory(pool, bcrypt);
+
+app.post('/api/upload-image', authenticateUser, checkAdminOrStaff, upload.single('image'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: 'No file uploaded' });
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { resource_type: 'image', folder: 'student_profiles' },
+        (error, uploadResult) => {
+          if (error) return reject(error);
+          resolve(uploadResult);
+        }
+      );
+      stream.end(file.buffer);
+    });
+
+    if (!result || !result.secure_url) {
+      logger.error('Cloudinary upload failed, no secure_url returned:', result);
+      return res.status(500).json({ message: 'Image upload failed with Cloudinary' });
+    }
+
+    logger.info('Image uploaded successfully to Cloudinary', { imageUrl: result.secure_url });
+    res.json({ imageUrl: result.secure_url });
+  } catch (error) {
+    logger.error('Error uploading image to Cloudinary:', {
+      message: error.message,
+      stack: error.stack,
+      cloudinaryConfig: {
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY ? '****' : undefined,
+        api_secret: process.env.CLOUDINARY_API_SECRET ? '****' : undefined,
+      },
+    });
+    res.status(500).json({ message: 'Server error during image upload', error: error.message });
+  }
+});
 
 const initializeRoute = (filePath, poolInstance, bcryptInstance) => {
   try {

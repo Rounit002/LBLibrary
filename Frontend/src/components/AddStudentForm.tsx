@@ -156,6 +156,10 @@ const AddStudentForm: React.FC = () => {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files ? e.target.files[0] : null;
     if (file) {
+      if (!['image/jpeg', 'image/jpg', 'image/png', 'image/gif'].includes(file.type)) {
+        toast.error('Only JPEG, JPG, PNG, and GIF images are allowed');
+        return;
+      }
       if (file.size > 200 * 1024) {
         toast.error('Image size exceeds 200KB limit');
         return;
@@ -187,7 +191,6 @@ const AddStudentForm: React.FC = () => {
   }));
 
   const handleSubmit = async () => {
-    // Validate required fields (excluding seatId and shiftId as they can be optional)
     if (
       !formData.name ||
       !formData.phone ||
@@ -199,7 +202,6 @@ const AddStudentForm: React.FC = () => {
       return;
     }
 
-    // If seatId is provided, shiftId must also be provided
     if (formData.seatId !== null && formData.shiftId === null) {
       toast.error('Please select a shift if a seat is selected');
       return;
@@ -210,8 +212,14 @@ const AddStudentForm: React.FC = () => {
       if (formData.image) {
         const imageFormData = new FormData();
         imageFormData.append('image', formData.image);
-        const uploadResponse = await api.uploadImage(imageFormData);
-        imageUrl = uploadResponse.imageUrl || '';
+        try {
+          const uploadResponse = await api.uploadImage(imageFormData);
+          imageUrl = uploadResponse.imageUrl || '';
+        } catch (error: any) {
+          console.error('Image upload failed:', error);
+          toast.error(error.response?.data?.message || 'Failed to upload image');
+          return;
+        }
       }
 
       const studentData = {
@@ -222,8 +230,8 @@ const AddStudentForm: React.FC = () => {
         branchId: formData.branchId!,
         membershipStart: formData.membershipStart,
         membershipEnd: formData.membershipEnd,
-        seatId: formData.seatId !== null ? formData.seatId : undefined, // Pass undefined if null
-        shiftIds: formData.shiftId !== null ? [formData.shiftId] : [], // Pass empty array if shiftId is null
+        seatId: formData.seatId !== null ? formData.seatId : undefined,
+        shiftIds: formData.shiftId !== null ? [formData.shiftId] : [],
         totalFee: formData.totalFee ? parseFloat(formData.totalFee) : 0,
         amountPaid: (parseFloat(formData.cash) || 0) + (parseFloat(formData.online) || 0),
         cash: parseFloat(formData.cash) || 0,
